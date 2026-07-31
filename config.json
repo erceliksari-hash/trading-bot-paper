@@ -1,0 +1,15 @@
+{
+  "telegram_token": "",
+  "telegram_chat_id": "",
+  "timeframe": "15m",
+  "paper_trade": true,
+  "daily_risk_pct": 0.01,
+  "rsi_overbought": 70,
+  "rsi_oversold": 30,
+  "assets": [
+    {"symbol": "BTC/USDT", "source": "crypto"},
+    {"symbol": "ETH/USDT", "source": "crypto"},
+    {"symbol": "AAPL", "source": "stock"},
+    {"symbol": "GARAN.IS", "source": "stock"}
+  ]
+}
