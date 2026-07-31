@@ -6,6 +6,7 @@
   "daily_risk_pct": 0.01,
   "rsi_overbought": 70,
   "rsi_oversold": 30,
+  "interval_minutes": 15,
   "assets": [
     {"symbol": "BTC/USDT", "source": "crypto"},
     {"symbol": "ETH/USDT", "source": "crypto"},
