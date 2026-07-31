@@ -1,0 +1,18 @@
+[Unit]
+Description=Trading Bot (paper trading)
+After=network.target
+
+[Service]
+User=youruser
+Group=yourgroup
+WorkingDirectory=/path/to/trading-bot-paper
+Environment="TELEGRAM_TOKEN=your_token"
+Environment="TELEGRAM_CHAT_ID=your_chat_id"
+ExecStart=/path/to/venv/bin/python /path/to/trading-bot-paper/trading_bot.py
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target

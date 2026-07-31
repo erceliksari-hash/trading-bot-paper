@@ -1,7 +1,16 @@
-venv/
+# Byte-compiled / cache
 __pycache__/
-*.pyc
+*.py[cod]
+
+# env / venv
+venv/
+.env
+.env.*
+
+# local data / logs / secrets
 wallet.json
 trades_log.csv
-bot.log
-.env
+*.log
+
+# OS
+.DS_Store

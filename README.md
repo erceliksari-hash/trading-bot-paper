@@ -1,47 +1,45 @@
-# Trading bot paper-trade repository
+# Trading bot (paper-trade)
 
-This repository contains a minimal paper-trading trading bot that:
-- Fetches data from Binance (via ccxt) for crypto and Yahoo Finance for stocks
-- Computes simple indicators (EMA, RSI, ATR)
-- Generates basic buy/sell signals (EMA crossover + RSI filter)
-- Executes paper trades (updates wallet.json and logs trades)
-- Sends Telegram notifications for trades and hourly summaries
-- Runs every 15 minutes (scheduler)
+Bu repo basit bir paper-trading bot iskeleti içerir:
+- Binance (ccxt) ve Yahoo Finance (yfinance) üzerinden veri çeker
+- EMA, RSI, ATR gibi göstergeler hesaplar
+- Basit EMA crossover + RSI filtresi ile sinyal üretir
+- Paper trade gerçekleştirir (wallet.json ve trades_log.csv güncellenir)
+- Telegram ile bildirim gönderir
+- Bir scheduler ile periyodik çalışır
 
-Getting started
-
-1. Clone the repo
-
+Hızlı başlangıç
+1. Klonla:
    git clone https://github.com/erceliksari-hash/trading-bot-paper.git
    cd trading-bot-paper
 
-2. Create a Python virtual environment and install dependencies
-
+2. Sanal ortam oluştur ve bağımlılıkları yükle:
    python3 -m venv venv
    source venv/bin/activate
    pip install -r requirements.txt
 
-3. Configure environment
-
-Set Telegram credentials as environment variables (recommended):
-
+3. Ortam değişkenleri (önerilir):
    export TELEGRAM_TOKEN="your_token"
    export TELEGRAM_CHAT_ID="your_chat_id"
 
-Or fill config.json (not recommended for tokens).
+   veya config.json içindeki alanları doldurabilirsiniz (token'ları çevre değişkeninde tutmak daha güvenlidir).
 
-4. Create wallet.json (example)
-
+4. Örnek wallet oluştur:
    {
      "USD": 10000.0
    }
+   wallet.json dosyası yoksa bot başlangıçta bu değeri kullanır.
 
-5. Run the bot
-
+5. Botu çalıştır:
    python trading_bot.py
 
-Run as daemon (linux): use systemd or Docker. See systemd/ and Dockerfile in repo.
+Docker:
+   docker build -t trading-bot .
+   docker run -e TELEGRAM_TOKEN=... -e TELEGRAM_CHAT_ID=... trading-bot
 
-Notes
-- This is a paper-trading template for testing and development. Do not use with real API keys without adding safety checks and proper error handling.
-- Add or remove assets in config.json. For crypto use symbols like "BTC/USDT". For stocks use Yahoo tickers like "AAPL" or BIST with ".IS" suffix if available on yfinance.
+systemd:
+  Repo içindeki örnek systemd dosyasını systemd/trading-bot.service olarak kullanabilirsiniz. /path/to/... alanlarını sunucunuza göre düzenleyin.
+
+Uyarılar:
+- Bu proje paper-trading içindir. Gerçek API anahtarlarıyla gerçek işlemler yapmayın veya gerçek işlemler yapmak için ek güvenlik/limit kontrolleri ekleyin.
+- config.json içindeki asset listesini güncelleyebilirsiniz. Crypto sembolleri örn: "BTC/USDT", hisse senetleri için "AAPL" veya BIST için "GARAN.IS".
