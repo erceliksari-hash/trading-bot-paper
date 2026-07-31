@@ -22,8 +22,22 @@ logger = logging.getLogger(__name__)
 with open("config.json", "r") as f:
     CONFIG = json.load(f)
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN") or CONFIG.get("telegram_token")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") or CONFIG.get("telegram_chat_id")
+# TELEGRAM token/chat fallback-okuma (çeşitli env anahtarlarını destekler)
+TELEGRAM_TOKEN = (
+    os.getenv("TELEGRAM_BOT_TOKEN")
+    or os.getenv("TELEGRAM_TOKEN")
+    or CONFIG.get("telegram_token")
+)
+TELEGRAM_CHAT_ID = (
+    os.getenv("TELEGRAM_CHAT_ID")
+    or os.getenv("TELEGRAM_CHATID")
+    or os.getenv("TELEGRAM_CHAT")
+    or CONFIG.get("telegram_chat_id")
+)
+
+# Ensure chat id representation (store as string for requests payload)
+if TELEGRAM_CHAT_ID is not None:
+    TELEGRAM_CHAT_ID = str(TELEGRAM_CHAT_ID)
 
 # Paper wallet (basit)
 if os.path.exists("wallet.json"):
@@ -45,25 +59,50 @@ except Exception as e:
     exchange = None
 
 # --- Helper functions ---
-def send_telegram(text, image_path=None):
-    """Basit Telegram notifier; token/chat id yoksa sadece loglar."""
+def send_telegram(text, image_path=None, retries=3, backoff=2):
+    """Basit Telegram notifier; token/chat id yoksa sadece loglar.
+    - retries: deneme sayısı
+    - backoff: saniye cinsinden bekleme (her retry artar)
+    """
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         logger.warning("Telegram token/chat_id not set, skipping notification")
         return False
+
+    for attempt in range(1, retries + 1):
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+            payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
+            r = requests.post(url, data=payload, timeout=10)
+            logger.debug("Telegram send attempt %s, status=%s, body=%s", attempt, r.status_code, r.text)
+            r.raise_for_status()
+
+            if image_path:
+                url2 = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+                with open(image_path, "rb") as img:
+                    r2 = requests.post(url2, data={"chat_id": TELEGRAM_CHAT_ID}, files={"photo": img}, timeout=20)
+                    logger.debug("Telegram photo send status=%s body=%s", r2.status_code, r2.text)
+                    r2.raise_for_status()
+            return True
+        except Exception as e:
+            logger.warning("Telegram send attempt %s failed: %s", attempt, e)
+            if attempt < retries:
+                time.sleep(backoff * attempt)
+            else:
+                logger.exception("All Telegram send attempts failed.")
+                return False
+
+def get_telegram_me():
+    """Helper: getMe ile token doğrulaması yapar ve kullanıcı bilgisini döner."""
+    if not TELEGRAM_TOKEN:
+        return None
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
-        r = requests.post(url, data=payload, timeout=10)
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getMe"
+        r = requests.get(url, timeout=10)
         r.raise_for_status()
-        if image_path:
-            url2 = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-            with open(image_path, "rb") as img:
-                r2 = requests.post(url2, data={"chat_id": TELEGRAM_CHAT_ID}, files={"photo": img}, timeout=20)
-                r2.raise_for_status()
-        return True
+        return r.json()
     except Exception as e:
-        logger.exception("Telegram send failed: %s", e)
-        return False
+        logger.exception("getMe failed: %s", e)
+        return None
 
 def fetch_ohlcv_ccxt(symbol, timeframe="15m", limit=200):
     """CCXT ile veri çekme, hata ve boş veri koruması."""
@@ -90,8 +129,12 @@ def fetch_ohlcv_yfinance(ticker, period="7d", interval="15m"):
         df = yf.download(tickers=ticker, period=period, interval=interval, progress=False)
         if df is None or df.empty:
             return pd.DataFrame()
-        # normalize
-        df.columns = [c.lower() for c in df.columns]
+        
+        # yfinance MultiIndex (çok katmanlı sütun) düzeltmesi
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        df.columns = [str(c).lower() for c in df.columns]
         if "adj close" in df.columns and "close" not in df.columns:
             df["close"] = df["adj close"]
         for col in ["open", "high", "low", "close", "volume"]:
@@ -107,7 +150,6 @@ def fetch_ohlcv_yfinance(ticker, period="7d", interval="15m"):
 def compute_indicators(df):
     """Basit göstergeler; eksik veri durumunda exception fırlatır."""
     df = df.copy()
-    # Guard: required columns
     required = {"open", "high", "low", "close", "volume"}
     if not required.issubset(df.columns):
         raise ValueError(f"DataFrame missing required cols: {set(df.columns)}")
@@ -199,7 +241,6 @@ def generate_signal(symbol, source="crypto"):
         signal = None
         reason = ""
 
-        # safety: ensure indicators exist and are finite
         if pd.notna(prev.get("ema_short")) and pd.notna(prev.get("ema_long")) and pd.notna(last.get("ema_short")) and pd.notna(last.get("ema_long")):
             if (prev["ema_short"] < prev["ema_long"]) and (last["ema_short"] > last["ema_long"]):
                 if last.get("rsi", 100) < CONFIG.get("rsi_overbought", 70):
@@ -216,7 +257,6 @@ def generate_signal(symbol, source="crypto"):
         else:
             reason = "indicator_nan"
 
-        # volume check (safe)
         vol_ok = True
         try:
             vol_mean = df["volume"].rolling(20).mean().iloc[-1]
@@ -312,6 +352,20 @@ def hourly_summary():
 
 # --- Scheduler setup ---
 def start_scheduler():
+    # Startup telegram check
+    me = get_telegram_me()
+    if me is None:
+        logger.warning("Telegram getMe failed or TELEGRAM_TOKEN not set. Telegram notifications may not work.")
+    else:
+        try:
+            ok = send_telegram(f"<b>Bot started</b>\nTime: {datetime.now(timezone.utc).isoformat()}")
+            if ok:
+                logger.info("Startup telegram notification sent.")
+            else:
+                logger.warning("Startup telegram notification failed.")
+        except Exception:
+            logger.exception("Startup telegram notification exception")
+
     scheduler = BackgroundScheduler()
     scheduler.add_job(run_analysis_cycle, "interval", minutes=int(CONFIG.get("interval_minutes", 15)), next_run_time=datetime.now(timezone.utc))
     scheduler.add_job(hourly_summary, "cron", minute=0)
